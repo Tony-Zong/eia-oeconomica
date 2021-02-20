@@ -27,13 +27,15 @@ if (!require(scales)) install.packages('scales')
 library(scales)
 if (!require(reshape2)) install.packages('reshape2')
 library(reshape2)
+if (!require(cowplot)) install.packages('cowplot')
+library(cowplot)
 if (!require(plm)) install.packages('plm')
 library(plm) # masks lag from dplyr (so we need to specify dplyr::lag)
 if (!require(stargazer)) install.packages('stargazer')
 library(stargazer) 
 
 ##-----##
-# Exploratory Data Analysis (make a new script with this code)
+# Load data and select columns of interest
 ##-----##
 
 loadRData <- function(fileName){
@@ -49,7 +51,7 @@ df_icpsr_followups <- loadRData(file.path(ddir, 'ICPSR_37202', 'DS0003', '37202-
 
 # ICPSR data cut down to columns of interest
 df_icpsr_selected_cols <- df_icpsr_followups %>%
-  select(c('CDIVISON', 'METRO', 'QS7', 'INCOME', 'REGIONA', 'IWYEAR', 'AA1', 'AA5A', 'AE15',
+  select(c('CDIVISON', 'METRO', 'QS7', 'INCOME', 'REGIONA', 'IWYEAR', 'AA1', 'BA1A', 'AA5A', 'AE15',
            'AB1', 'AF1', 'AF9', 'AF10', 'AQ10_1', 'AS5'))
 
 # Connecting Outcome Measures in Entrepreneurship, Technology, and Science (COMETS) database
@@ -87,7 +89,7 @@ df_comets_patent_subset <- df_comets_patents_subset %>%
   left_join(df_comets_patent_us_classes, by = 'patent_id') %>%
   left_join(df_comets_patent_zd_cats, by = 'patent_id')
 
-df_comets_grants_subset <- subset_df(df_comets_grants, 10000)
+df_comets_grants_subset <- subset_df(df_comets_grants, 207700)
 df_comets_grant_subset <- df_comets_grants_subset %>%
   left_join(df_comets_grantee_orgs, by = 'grant_num') %>%
   left_join(df_comets_grant_zd_cats, by = 'grant_num')
@@ -96,42 +98,67 @@ df_comets_grant_subset <- df_comets_grants_subset %>%
 # https://www.nber.org/research/data/nber-ces-manufacturing-industry-database
 df_nber_sic5811 <- read_csv(file.path(ddir, 'NBER Manufacturing', 'sic5811.csv')) %>%
   select(c('sic', 'year', 'emp', 'pay', 'prode', 'prodw', 'vadd', 
-           'invest', 'dtfp5'))
+           'invest', 'dtfp5', 'equip'))
 
-# Here are the three datasets we will use
+sic_names <- read_csv(file.path(ddir, 'NBER Manufacturing', 'sic_names_87.csv'), col_names = c('sic', 'sic_name'))
+
+df_nber_sic5811 <- merge(df_nber_sic5811, sic_names, by = 'sic')
+
+# NAICS codes actually merge better with entrepreneurship data
+df_nber_naics5811 <- read_csv(file.path(ddir, 'NBER Manufacturing', 'naics5811.csv')) %>%
+  select(c('naics', 'year', 'emp', 'pay', 'prode', 'prodw', 'vadd', 
+           'invest', 'dtfp5', 'equip'))
+
+# Here are the four datasets we will use
 # We will "unsubset" at the end to run our regressions on the whole dataset
+View(df_icpsr_selected_cols)
 View(df_comets_patent_subset)
 View(df_comets_grant_subset)
-View(df_nber_sic5811)
-  
-##
+View(df_nber_naics5811)
 
-# From the COMETS dataset, it seems there isn’t enough substantial data to base a whole paper on, 
-# but we could generally explore which industries receive the most funding from grants for patents 
-# and use this information as one point in a larger claim.  For the NBER data, we could examine how 
-# growth rates are related to capital expenditures in different industries or discuss how worker wages 
-# are proportionally adjusted as a company grows. In the last dataset, there is a lot we could analyze. 
-# We could look at how different industries promote entrepreneurial action by looking at categorical 
-# questions about attitudes towards a particular market or just generally the percentage of entrants 
-# and how much they invest in the start-up. (Arjun)
+##-----##
+# Exploratory Data Analysis (make a new script with this code)
+##-----##
 
-# For COMETS, we can see whether different organization types receive different amounts in grant 
-# funding / support for patents. For NBER, we can see whether additional capital is related to increased 
-# value-added, and whether worker wages are affected. For PSED, we can look at geographic location, 
-# market competition, and motives for startup companies. I would expect larger investments in cities. (Chris)
+## Finding: The US and international patent classification are not informative
+## Solution: either find the complete codebook for patent classification, or 
+## study the Zucker-Darby Science and Technology Area Category first
 
-##
+# see which ZD category has more patents
+patent_zd_sum <- df_comets_patent_subset %>%
+  group_by(zd)%>%
+  summarize(count=n())%>%
+  arrange(desc(count))
 
-# What we can do with this data
-# characteristics of high-patent industries (what are the incentives)
-# see how r&d dollar per firm affects investment/desire of people to be entrepreneurs 
-# r&d and startup survival rate
-# are people more encouraged to be entrepreneurs in industries with greater r&d spending
-# how about industries where there are lots of patents? 
-# are rewards up front greater than delayed gratification? 
-# does greater r&d/new entrepreneurship in an industry increase likelihood patent will be cited?
-# might need to do some background about patent citations -- this could be the lit review for proposal
-# example: https://www.law.northwestern.edu/research-faculty/clbe/events/innovation/documents/AbramsSampatDrugCites060917.pdf
-# as subsidies increase, innovation decreases 
-# (so potentially as those go up in an industry, which would only happen in more concentrated industries,
-# innovation/patents might fall OR patents per researcher)
+p1 <- ggplot(df_comets_patent_subset, aes(x = zd)) +
+  geom_bar()
+
+# see which ZD category has more grants
+grant_zd_sum <- df_comets_grant_subset %>%
+  group_by(zd)%>%
+  summarize(count=n())%>%
+  arrange(desc(count))
+
+p2 <- ggplot(df_comets_grant_subset, aes(x = zd)) +
+  geom_bar()
+
+# compare the results
+plot_grid(p1, p2, labels = c("patents","grants"))
+
+# Capital expenditures in different industries 
+
+df_invest_by_sic <- df_nber_sic5811 %>%
+  group_by(sic) %>%
+  summarize(invest_per_equip_mean = mean(invest/equip), sic_name, year) %>%
+  arrange(desc(invest_per_equip_mean))
+
+ggplot(df_invest_by_sic, aes(x = sic, y = invest_per_equip_mean)) +
+  geom_col() +
+  theme_void()
+
+# Merge ICPSR on SIC codes (AA1A)
+df_icpsr_selected_cols <- df_icpsr_followups %>%
+  rename(naics = AA1) 
+
+icpsr_nber <- merge(df_icpsr_selected_cols, df_nber_naics5811, on = 'naics')
+View(icpsr_nber)
