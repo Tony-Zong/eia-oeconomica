@@ -46,13 +46,40 @@ loadRData <- function(fileName){
 
 # Panel Study of Entrepreneurial Dynamics, PSED II, United States, 2005-2011 (ICPSR 37202)
 # http://www.psed.isr.umich.edu/psed/home
-df_icpsr_screeners <- loadRData(file.path(ddir, 'ICPSR_37202', 'DS0001', '37202-0001-Data.rda'))
-df_icpsr_followups <- loadRData(file.path(ddir, 'ICPSR_37202', 'DS0003', '37202-0003-Data.rda'))
+df_icpsr <- loadRData(file.path(ddir, 'ICPSR_37202', 'DS0003', '37202-0003-Data.rda'))
 
-# ICPSR data cut down to columns of interest
-df_icpsr_selected_cols <- df_icpsr_followups %>%
-  select(c('CDIVISON', 'METRO', 'QS7', 'INCOME', 'REGIONA', 'IWYEAR', 'AA1', 'BA1A', 'AA5A', 'AE15',
-           'AB1', 'AF1', 'AF9', 'AF10', 'AQ10_1', 'AS5'))
+# Each nascent entrepreneur is identified by a unique SAMPID value
+# There are 1214 entrepreneurs represented, one for each row
+
+# There were screener interviews and six waves of followup interviews conducted 
+# The screener interviews were conducted from September 2005 to February 2006.
+# Wave A interviews were conducted from September 2005 to March 2006.
+# Wave B interviews were conducted one year later, from October 2006 to March 2007. 
+# Wave C interviews were conducted two years later, from October 2007 to May 2008. 
+# Wave D interviews were conducted three years later, from October 2008 to April 2009. 
+# Wave E interviews were conducted four years later, from October 2009 to April 2010. 
+# Wave F interviews were conducted five years later, from October 2010 to April 2011.
+
+# Multiply any variable by its wave's weight if generating summaries of all observations
+# Make sure weights are recentered to have mean = 1 if a subset is used
+
+# Variables:
+# Industry (NAICS): AA1
+# Why do you want to start this business: AA2A, AA2B
+# What prompted you to start this new business: AA5A, AA5B
+# What are the one or two main problems involved in starting this new business? (compare number of patents to market competition response): AA6A, AA6B)
+# Did this new business emerge from your current work activity? (compare to capital expenditures, etc.): AA9
+# Question related to new business's being sponsored by eisting business: AA10
+# Question related to technical and scientific expertise of start-up team is important: AF8
+# BA50: 1 == new firm; 2 == active start-up; 3 == quit
+
+##-----##
+
+# NBER Manufacturing 
+# https://www.nber.org/research/data/nber-ces-manufacturing-industry-database
+df_nber_naics5811 <- read_csv(file.path(ddir, 'NBER Manufacturing', 'naics5811.csv'))
+
+##-----##
 
 # Connecting Outcome Measures in Entrepreneurship, Technology, and Science (COMETS) database
 # https://www.kauffman.org/entrepreneurship/research/comets/
@@ -77,47 +104,23 @@ df_comets_grantee_orgs <- read_csv(file.path(ddir, 'COMETS', 'All CSV', 'Grant C
 df_comets_grant_zd_cats <- read_csv(file.path(ddir, 'COMETS', 'All CSV', 'Grant CSV', 'grant_zd_cats_v2.csv.zip')) %>%
   select(c('grant_num', 'grant_agency', 'zd'))
 
+df_comets_patent <- df_comets_patents %>%
+  left_join(df_comets_patent_cite_counts, by = 'patent_id') %>%
+  left_join(df_comets_patent_us_classes, by = 'patent_id') %>%
+  left_join(df_comets_patent_zd_cats, by = 'patent_id')
+
+df_comets_grant <- df_comets_grants %>%
+  left_join(df_comets_grantee_orgs, by = 'grant_num') %>%
+  left_join(df_comets_grant_zd_cats, by = 'grant_num')
+
 # Subsetting
 subset_df <- function(df, n) {
   set.seed(60637)
   df[sample(1:nrow(df), n, replace=FALSE),]
 }
 
-df_comets_patents_subset <- subset_df(df_comets_patents, 10000)
-df_comets_patent_subset <- df_comets_patents_subset %>%
-  left_join(df_comets_patent_cite_counts, by = 'patent_id') %>%
-  left_join(df_comets_patent_us_classes, by = 'patent_id') %>%
-  left_join(df_comets_patent_zd_cats, by = 'patent_id')
-
-df_comets_grants_subset <- subset_df(df_comets_grants, 207700)
-df_comets_grant_subset <- df_comets_grants_subset %>%
-  left_join(df_comets_grantee_orgs, by = 'grant_num') %>%
-  left_join(df_comets_grant_zd_cats, by = 'grant_num')
-
-# NBER Manufacturing 
-# https://www.nber.org/research/data/nber-ces-manufacturing-industry-database
-df_nber_sic5811 <- read_csv(file.path(ddir, 'NBER Manufacturing', 'sic5811.csv')) %>%
-  select(c('sic', 'year', 'emp', 'pay', 'prode', 'prodw', 'vadd', 
-           'invest', 'dtfp5', 'equip'))
-
-sic_names <- read_csv(file.path(ddir, 'NBER Manufacturing', 'sic_names_87.csv'), col_names = c('sic', 'sic_name'))
-
-df_nber_sic5811 <- merge(df_nber_sic5811, sic_names, by = 'sic')
-
-# NAICS codes actually merge better with entrepreneurship data
-df_nber_naics5811 <- read_csv(file.path(ddir, 'NBER Manufacturing', 'naics5811.csv')) %>%
-  select(c('naics', 'year', 'emp', 'pay', 'prode', 'prodw', 'vadd', 
-           'invest', 'dtfp5', 'equip'))
-
-# Here are the four datasets we will use
-# We will "unsubset" at the end to run our regressions on the whole dataset
-View(df_icpsr_selected_cols)
-View(df_comets_patent_subset)
-View(df_comets_grant_subset)
-View(df_nber_naics5811)
-
 ##-----##
-# Exploratory Data Analysis (make a new script with this code)
+# Exploratory Data Analysis (make a new script with this code when done this step)
 ##-----##
 
 ## Finding: The US and international patent classification are not informative
