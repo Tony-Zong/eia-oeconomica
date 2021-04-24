@@ -28,6 +28,9 @@ if (!require(stargazer)) install.packages('stargazer')
 library(stargazer) 
 if(!require(rvest)) install.packages('rvest')
 library(rvest)
+if(!require(sjPlot)) install.packages('sjPlot')
+library(sjPlot)
+theme_set(theme_sjplot())
 
 # We will consider six states: 
 # California (CA), Texas (TX), Illinois (IL), Massachusetts (MA), New York (NY), Florida (FL)
@@ -174,11 +177,11 @@ univ_kbi <- univ_naics_simple %>%
 univ_kbi_pd <- pdata.frame(x = univ_kbi, index = c('city', 'year'))
 
 lm_fe_1 <- plm(ln_kbi_comp ~ patent_count,
-               data = univ_kbi_pd, model = "within",effect = "twoways")
+               data = univ_kbi_pd, model = "within", effect = "twoways")
 
 lm_fe_2 <- plm(kbi_comp ~ patent_universities_count + patent_count,
-               data = univ_kbi_pd, model = "within",effect = "twoways")
-
+               data = univ_kbi_pd, model = "within", effect = "twoways")
+ 
 # compensation is in thousands of dollars
 table <- stargazer(lm_fe_1, lm_fe_2, 
                      digits = 3, header = FALSE, type = 'text', model.numbers = FALSE)
@@ -186,4 +189,21 @@ table <- stargazer(lm_fe_1, lm_fe_2,
 lm1 <- lm(ln_kbi_comp ~ patent_count + year, data = univ_kbi)
 summary(lm1)
 
+univ_kbi <- univ_kbi %>%
+  mutate(kbi_comp_mil = kbi_comp/1000)
+
+lm_plot_2 <- lm(kbi_comp_mil ~ patent_count + as.factor(year) + as.factor(city), data = univ_kbi)
+lm_plot_1 <- lm(ln_kbi_comp ~ patent_count + as.factor(year) + as.factor(city), data = univ_kbi)
+
+
+#set width:height on export 2.5:1 
+plot_model(lm_plot_2, type = "pred", terms = "patent_count", 
+           title = 'Model Predicted Knowledge-based industry compensation vs. University patent count | Fixed effects',
+           axis.title = c('University patent count','Knowledge-based industry compensation (millions)'))
+
+plot_model(lm_plot_1, type = 'pred', terms = "patent_count")
+
 # figure out how to deal with patent counts in university systems/with universities with odd naming styles
+# time series plots of compensation and patents (3 total with model plot)
+# maybe add more states
+# try to see full industry data with kbi as indicator (interaction term with industry-wide compensation)

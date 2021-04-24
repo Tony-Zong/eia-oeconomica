@@ -71,6 +71,7 @@ df_icpsr <- loadRData(file.path(ddir, 'ICPSR_37202', 'DS0003', '37202-0003-Data.
 # Did this new business emerge from your current work activity? (compare to capital expenditures, etc.): AA9
 # Question related to new business's being sponsored by eisting business: AA10
 # Question related to technical and scientific expertise of start-up team is important: AF8
+# How many years of work experience have you had in the industry: AH11_1
 # BA50: 1 == new firm; 2 == active start-up; 3 == quit
 
 ##-----##
