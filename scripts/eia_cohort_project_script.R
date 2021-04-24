@@ -182,9 +182,8 @@ univ_kbi_pd <- pdata.frame(x = univ_kbi, index = c('city', 'year'))
 
 # REGRESSIONS
 
-lm_fe_1 <- plm(ln_kbi_comp ~ patent_count,
+lm_fe_1 <- plm(ln_kbi_comp ~ ln_patent_count,
                data = univ_kbi_pd, model = "within", effect = "twoways")
-lm_plot_1 <- lm(ln_kbi_comp ~ patent_count + as.factor(year) + as.factor(city), data = univ_kbi)
 
 lm_fe_2 <- plm(kbi_comp_mil ~ patent_count,
                data = univ_kbi_pd, model = "within", effect = "twoways")
@@ -192,22 +191,30 @@ lm_plot_2 <- lm(kbi_comp_mil ~ patent_count + as.factor(year) + as.factor(city),
 
 lm_fe_3 <- plm(kbi_comp_mil ~ ln_patent_count,
                data = univ_kbi_pd, model = "within", effect = "twoways")
+lm_plot_3 <- lm(kbi_comp_mil ~ ln_patent_count + as.factor(year) + as.factor(city), data = univ_kbi)
 
 reg_table <- texreg(list(lm_fe_2, lm_fe_3), include.ci = FALSE, digits = 3,
                  custom.coef.map = list('patent_count'= "UnivPatents",
                                         'ln_patent_count' = "ln(UnivPatents)"),
                  custom.header = list('KBIComp' = 1:2),
                  custom.model.names = c('(1)', '(2)'),
-                 caption = 'Regression analysis')
+                 caption = 'Regression analysis',
+                 include.adjrs = FALSE)
 write.table(reg_table, file.path(root, 'docs', 'reg_table.tex'), col.names = FALSE, row.names = FALSE, quote = FALSE)
 
 # FIGURES
 
-model_fig <- plot_model(lm_plot_2, type = "pred", terms = "patent_count", 
+model_fig1 <- plot_model(lm_plot_2, type = "pred", terms = "patent_count", 
                          title = 'Model Predicted Knowledge-based industry compensation vs. University patent count | Fixed effects',
-                         axis.title = c('University patent count','Knowledge-based industry compensation (millions)'))
-ggsave(file.path(root, 'docs', 'model_fig.pdf'), 
-       plot = model_fig, width = 10, height = 7)
+                         axis.title = c('University patent count','Knowledge-based industry compensation in millions'))
+ggsave(file.path(root, 'docs', 'model_fig1.png'), 
+       plot = model_fig1, width = 10, height = 7)
+
+model_fig2 <- plot_model(lm_plot_3, type = "pred", terms = "ln_patent_count", 
+                        title = 'Model Predicted Knowledge-based industry compensation vs. University patent count | Fixed effects',
+                        axis.title = c('University patent count (log)','Knowledge-based industry compensation in millions'))
+ggsave(file.path(root, 'docs', 'model_fig2.png'), 
+       plot = model_fig2, width = 10, height = 7)
 
 patents_fig_df <- univ_kbi %>%
   group_by(state, year) %>%
@@ -218,8 +225,8 @@ patents_fig <- ggplot(data = patents_fig_df, aes(x = year, y = patent_count, gro
   xlab('Year') +
   ylab('University patent count') +
   ggtitle('University patent counts in cities in sample')
-ggsave(file.path(root, 'docs', 'patents_fig.pdf'), 
-       plot = patents_fig, width = 6, height = 4)
+ggsave(file.path(root, 'docs', 'patents_fig.png'), 
+       plot = patents_fig, width = 7, height = 5)
 
 kbi_comp_df <- univ_kbi %>%
   group_by(state, year) %>%
@@ -228,7 +235,7 @@ kbi_comp_df <- univ_kbi %>%
 kbi_comp_fig <- ggplot(data = kbi_comp_df, aes(x = year, y = kbi_comp_mil, group = state, color = state)) +
   geom_smooth(se = FALSE) + 
   xlab('Year') +
-  ylab('Knowledge-based industry compensation (millions)') +
+  ylab('Knowledge-based industry compensation in millions') +
   ggtitle('Knowledge-based industry compensation in cities in sample')
-ggsave(file.path(root, 'docs', 'kbi_comp_fig.pdf'), 
-       plot = kbi_comp_fig, width = 8, height = 6)
+ggsave(file.path(root, 'docs', 'kbi_comp_fig.png'), 
+       plot = kbi_comp_fig, width = 7, height = 5)
