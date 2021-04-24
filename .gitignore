@@ -1,5 +1,6 @@
-eia_oeconomica.Rproj
+*.Rproj
 .Rhistory
 .RData
 .Ruserdata
 .DS_Store
+.Rproj.user
