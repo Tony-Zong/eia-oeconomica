@@ -28,6 +28,8 @@ if (!require(stargazer)) install.packages('stargazer')
 library(stargazer) 
 if(!require(rvest)) install.packages('rvest')
 library(rvest)
+if (!require(texreg)) install.packages('texreg')
+library(texreg)
 if(!require(sjPlot)) install.packages('sjPlot')
 library(sjPlot)
 theme_set(theme_sjplot())
@@ -172,38 +174,61 @@ univ_kbi <- univ_naics_simple %>%
   select(c('year', 'city', 'state', 'patent_universities_count', 'patent_count', 'kbi_comp', 'kbi_share')) %>%
   distinct() %>%
   filter(kbi_comp > 0) %>%
-  mutate(ln_kbi_comp = log(kbi_comp))
+  mutate(ln_kbi_comp = log(kbi_comp)) %>%
+  mutate(kbi_comp_mil = kbi_comp/1000) %>%
+  mutate(ln_patent_count = log(patent_count))
 
 univ_kbi_pd <- pdata.frame(x = univ_kbi, index = c('city', 'year'))
 
+# REGRESSIONS
+
 lm_fe_1 <- plm(ln_kbi_comp ~ patent_count,
                data = univ_kbi_pd, model = "within", effect = "twoways")
-
-lm_fe_2 <- plm(kbi_comp ~ patent_universities_count + patent_count,
-               data = univ_kbi_pd, model = "within", effect = "twoways")
- 
-# compensation is in thousands of dollars
-table <- stargazer(lm_fe_1, lm_fe_2, 
-                     digits = 3, header = FALSE, type = 'text', model.numbers = FALSE)
-
-lm1 <- lm(ln_kbi_comp ~ patent_count + year, data = univ_kbi)
-summary(lm1)
-
-univ_kbi <- univ_kbi %>%
-  mutate(kbi_comp_mil = kbi_comp/1000)
-
-lm_plot_2 <- lm(kbi_comp_mil ~ patent_count + as.factor(year) + as.factor(city), data = univ_kbi)
 lm_plot_1 <- lm(ln_kbi_comp ~ patent_count + as.factor(year) + as.factor(city), data = univ_kbi)
 
+lm_fe_2 <- plm(kbi_comp_mil ~ patent_count,
+               data = univ_kbi_pd, model = "within", effect = "twoways")
+lm_plot_2 <- lm(kbi_comp_mil ~ patent_count + as.factor(year) + as.factor(city), data = univ_kbi)
 
-#set width:height on export 2.5:1 
-plot_model(lm_plot_2, type = "pred", terms = "patent_count", 
-           title = 'Model Predicted Knowledge-based industry compensation vs. University patent count | Fixed effects',
-           axis.title = c('University patent count','Knowledge-based industry compensation (millions)'))
+lm_fe_3 <- plm(kbi_comp_mil ~ ln_patent_count,
+               data = univ_kbi_pd, model = "within", effect = "twoways")
 
-plot_model(lm_plot_1, type = 'pred', terms = "patent_count")
+reg_table <- texreg(list(lm_fe_2, lm_fe_3), include.ci = FALSE, digits = 3,
+                 custom.coef.map = list('patent_count'= "UnivPatents",
+                                        'ln_patent_count' = "ln(UnivPatents)"),
+                 custom.header = list('KBIComp' = 1:2),
+                 custom.model.names = c('(1)', '(2)'),
+                 caption = 'Regression analysis')
+write.table(reg_table, file.path(root, 'docs', 'reg_table.tex'), col.names = FALSE, row.names = FALSE, quote = FALSE)
 
-# figure out how to deal with patent counts in university systems/with universities with odd naming styles
-# time series plots of compensation and patents (3 total with model plot)
-# maybe add more states
-# try to see full industry data with kbi as indicator (interaction term with industry-wide compensation)
+# FIGURES
+
+model_fig <- plot_model(lm_plot_2, type = "pred", terms = "patent_count", 
+                         title = 'Model Predicted Knowledge-based industry compensation vs. University patent count | Fixed effects',
+                         axis.title = c('University patent count','Knowledge-based industry compensation (millions)'))
+ggsave(file.path(root, 'docs', 'model_fig.pdf'), 
+       plot = model_fig, width = 10, height = 7)
+
+patents_fig_df <- univ_kbi %>%
+  group_by(state, year) %>%
+  summarise(patent_count)
+
+patents_fig <- ggplot(data = patents_fig_df, aes(x = year, y = patent_count, group = state, color = state)) +
+  geom_smooth(se = FALSE) + 
+  xlab('Year') +
+  ylab('University patent count') +
+  ggtitle('University patent counts in cities in sample')
+ggsave(file.path(root, 'docs', 'patents_fig.pdf'), 
+       plot = patents_fig, width = 6, height = 4)
+
+kbi_comp_df <- univ_kbi %>%
+  group_by(state, year) %>%
+  summarise(kbi_comp_mil)
+
+kbi_comp_fig <- ggplot(data = kbi_comp_df, aes(x = year, y = kbi_comp_mil, group = state, color = state)) +
+  geom_smooth(se = FALSE) + 
+  xlab('Year') +
+  ylab('Knowledge-based industry compensation (millions)') +
+  ggtitle('Knowledge-based industry compensation in cities in sample')
+ggsave(file.path(root, 'docs', 'kbi_comp_fig.pdf'), 
+       plot = kbi_comp_fig, width = 8, height = 6)
