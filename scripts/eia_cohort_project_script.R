@@ -1,10 +1,3 @@
-##-----##
-# Oeconomica's Entrepreneurship, Innovation & Antitrust Cohort, 2020–2021
-##-----##
-
-# Everything you need to run this code (data and instructions) is here:
-# https://github.com/gelkouh/eia-oeconomica
-
 # This snippet of code is a little loop that makes my code work on your computer
 root <- getwd()
 while(basename(root) != "eia-oeconomica") { # this is the name of your project directory you want to use
@@ -33,136 +26,209 @@ if (!require(plm)) install.packages('plm')
 library(plm) # masks lag from dplyr (so we need to specify dplyr::lag)
 if (!require(stargazer)) install.packages('stargazer')
 library(stargazer) 
+if(!require(rvest)) install.packages('rvest')
+library(rvest)
+if (!require(texreg)) install.packages('texreg')
+library(texreg)
+if(!require(sjPlot)) install.packages('sjPlot')
+library(sjPlot)
+theme_set(theme_sjplot())
 
-##-----##
-# Load data and select columns of interest
-##-----##
+# We will consider six states: 
+# California (CA), Texas (TX), Illinois (IL), Massachusetts (MA), New York (NY), Florida (FL)
+state_list <- c('CA', 'TX', 'IL', 'MA', 'NY', 'FL')
+state_code <- c('06', '12', '17', '25', '36', '48')
 
-loadRData <- function(fileName){
-  # Loads RData file and returns it
-  load(fileName)
-  get(ls()[ls() != "fileName"])
-}
-
-# Panel Study of Entrepreneurial Dynamics, PSED II, United States, 2005-2011 (ICPSR 37202)
-# http://www.psed.isr.umich.edu/psed/home
-df_icpsr <- loadRData(file.path(ddir, 'ICPSR_37202', 'DS0003', '37202-0003-Data.rda'))
-
-# Each nascent entrepreneur is identified by a unique SAMPID value
-# There are 1214 entrepreneurs represented, one for each row
-
-# There were screener interviews and six waves of followup interviews conducted 
-# The screener interviews were conducted from September 2005 to February 2006.
-# Wave A interviews were conducted from September 2005 to March 2006.
-# Wave B interviews were conducted one year later, from October 2006 to March 2007. 
-# Wave C interviews were conducted two years later, from October 2007 to May 2008. 
-# Wave D interviews were conducted three years later, from October 2008 to April 2009. 
-# Wave E interviews were conducted four years later, from October 2009 to April 2010. 
-# Wave F interviews were conducted five years later, from October 2010 to April 2011.
-
-# Multiply any variable by its wave's weight if generating summaries of all observations
-# Make sure weights are recentered to have mean = 1 if a subset is used
-
-# Variables:
-# Industry (NAICS): AA1
-# Why do you want to start this business: AA2A, AA2B
-# What prompted you to start this new business: AA5A, AA5B
-# What are the one or two main problems involved in starting this new business? (compare number of patents to market competition response): AA6A, AA6B)
-# Did this new business emerge from your current work activity? (compare to capital expenditures, etc.): AA9
-# Question related to new business's being sponsored by eisting business: AA10
-# Question related to technical and scientific expertise of start-up team is important: AF8
-# How many years of work experience have you had in the industry: AH11_1
-# BA50: 1 == new firm; 2 == active start-up; 3 == quit
-
-##-----##
-
-# NBER Manufacturing 
-# https://www.nber.org/research/data/nber-ces-manufacturing-industry-database
-df_nber_naics5811 <- read_csv(file.path(ddir, 'NBER Manufacturing', 'naics5811.csv'))
-
-##-----##
-
-# Connecting Outcome Measures in Entrepreneurship, Technology, and Science (COMETS) database
+# COMETS 
 # https://www.kauffman.org/entrepreneurship/research/comets/
-# Note: read_csv works with zipped files
-df_comets_patents <- read_csv(file.path(ddir, 'COMETS', 'All CSV', 'Patent CSV', 'patents_v2.csv.zip')) %>%
-  select(c('patent_id', 'grant_date', 'patent_title'))
-df_comets_patent_cite_counts <- read_csv(file.path(ddir, 'COMETS', 'All CSV', 'Patent CSV', 'patent_cite_counts_v2.csv.zip'))
-df_comets_patent_us_classes <- read_csv(file.path(ddir, 'COMETS', 'All CSV', 'Patent CSV', 'patent_us_classes_v2.csv.zip')) %>%
-  select(c('patent_id', 'us_class'))
-# This failed for some reason: 
-# df_comets_patent_assignees <- read_csv(file.path(ddir, 'COMETS', 'All CSV', 'Patent CSV', 'patent_assignees_v2.csv.zip')) %>%
-#   select(c('patent_id', 'org_type'))
-df_comets_patent_zd_cats <- read_csv(file.path(ddir, 'COMETS', 'All CSV', 'Patent CSV', 'patent_zd_cats_v2.csv.zip')) %>%
-  rename(patent_id = patent) %>%
-  select(c('patent_id', 'zd'))
+univ_institutional_info <- read_csv(file.path(ddir, 'spring1/univ_institutional_info_v2.csv')) 
+univ_system_patents <- read_csv(file.path(ddir, 'spring1/univ_system_patents_v2.csv'))
+univ_org_info <- read_csv(file.path(ddir, 'spring1/univ_org_info_v2.csv'))
 
-# Note: amount is NA for all values (probably to anonymize the data)
-df_comets_grants <- read_csv(file.path(ddir, 'COMETS', 'All CSV', 'Grant CSV', 'grants_v2.csv.zip')) %>%
-  select(c('grant_num', 'grant_agency', 'start_date', 'end_date', 'amount'))
-df_comets_grantee_orgs <- read_csv(file.path(ddir, 'COMETS', 'All CSV', 'Grant CSV', 'grantee_orgs_v2.csv.zip')) %>%
-  select(c('grant_num', 'grant_agency', 'org_type'))
-df_comets_grant_zd_cats <- read_csv(file.path(ddir, 'COMETS', 'All CSV', 'Grant CSV', 'grant_zd_cats_v2.csv.zip')) %>%
-  select(c('grant_num', 'grant_agency', 'zd'))
+univ_info <- univ_institutional_info %>%
+  inner_join(univ_org_info, by = 'unitid') %>%
+  filter(stabbr %in% state_list)
 
-df_comets_patent <- df_comets_patents %>%
-  left_join(df_comets_patent_cite_counts, by = 'patent_id') %>%
-  left_join(df_comets_patent_us_classes, by = 'patent_id') %>%
-  left_join(df_comets_patent_zd_cats, by = 'patent_id')
+univ_patents <- univ_info %>%
+  inner_join(univ_system_patents, by = c('org_id', 'yr')) %>%
+  rename(GeoName = city, year = yr) %>%
+  mutate(year = as.factor(year),
+         State = ifelse(stabbr == 'TX', 'Texas', 
+                        ifelse(stabbr == 'CA', 'California',
+                               ifelse(stabbr == 'IL', 'Illinois',
+                                      ifelse(stabbr == 'MA', 'Massachusetts',
+                                             ifelse(stabbr == 'FL', 'Florida', 'New York')))))) %>%
+  group_by(instnm, GeoName, State, stabbr, year) %>%
+  summarize(num_patents = sum(num_patents)) %>%
+  group_by(GeoName, State, stabbr, year) %>%
+  summarize(patent_universities_count = n_distinct(instnm), num_patents = sum(num_patents))
 
-df_comets_grant <- df_comets_grants %>%
-  left_join(df_comets_grantee_orgs, by = 'grant_num') %>%
-  left_join(df_comets_grant_zd_cats, by = 'grant_num')
+# USPTO
+# https://www.uspto.gov/web/offices/ac/ido/oeip/taf/univ/org_gr/all_univ_ag.htm
 
-# Subsetting
-subset_df <- function(df, n) {
-  set.seed(60637)
-  df[sample(1:nrow(df), n, replace=FALSE),]
+web_address <- 'https://www.uspto.gov/web/offices/ac/ido/oeip/taf/univ/org_gr/all_univ_ag.htm'
+webpage_code <- read_html(web_address)
+
+webpage_text <- html_text(html_nodes(webpage_code, '.data , .header'))
+index <- 1
+# index <- 26
+# tail(webpage_text, -25))
+for (item in webpage_text) {
+  webpage_text[index] <- str_trim(gsub(item, pattern = "\n", replacement = ""), side = 'both')
+  index <- index + 1
 }
 
-##-----##
-# Exploratory Data Analysis (make a new script with this code when done this step)
-##-----##
+uspto_patents <- data.frame(matrix(unlist(webpage_text), ncol = 25, byrow = TRUE))
+colnames(uspto_patents) <- as.character(uspto_patents[1,])
+uspto_patents <- uspto_patents[-1,] %>%
+  select(-c('Total', 'PRE_1992')) %>%
+  melt(id=c('Organizational Identifier', 'State')) %>%
+  rename(year = variable, patent_count = value, NAME = `Organizational Identifier`, STATE = State)
 
-## Finding: The US and international patent classification are not informative
-## Solution: either find the complete codebook for patent classification, or 
-## study the Zucker-Darby Science and Technology Area Category first
+# HIFLD
+# https://hifld-geoplatform.opendata.arcgis.com/datasets/colleges-and-universities?geometry=25.454%2C-16.798%2C-24.819%2C72.130&selectedAttribute=NAICS_CODE
+univ_locations <- read_csv(file.path(ddir, 'Colleges_and_Universities.csv'))
+univ_locations <- univ_locations %>%
+  select(c('NAME', 'CITY', 'STATE'))
 
-# see which ZD category has more patents
-patent_zd_sum <- df_comets_patent_subset %>%
-  group_by(zd)%>%
-  summarize(count=n())%>%
-  arrange(desc(count))
+# Error introduced here: only merges on full university names (e.g., see Harvard)
+# Maybe do a fuzzy match? 
+# Or go through by hand and edit names?
+univ_uspto_patents <- uspto_patents %>%
+  inner_join(univ_locations, by = c('NAME', 'STATE')) %>%
+  filter(STATE %in% state_list) %>%
+  rename(GeoName = CITY) %>%
+  mutate(year = as.factor(year),
+         patent_count = as.numeric(patent_count),
+         State = ifelse(STATE == 'TX', 'Texas', 
+                        ifelse(STATE == 'CA', 'California',
+                               ifelse(STATE == 'IL', 'Illinois',
+                                      ifelse(STATE == 'MA', 'Massachusetts',
+                                             ifelse(STATE == 'FL', 'Florida', 'New York')))))) %>%
+  group_by(GeoName, State, STATE, year) %>%
+  summarize(patent_universities_count = n_distinct(NAME), patent_count = sum(patent_count)) %>%
+  mutate(patent_universities_count = ifelse(patent_count == 0, 0, patent_universities_count)) %>%
+  filter(patent_universities_count > 0)
 
-p1 <- ggplot(df_comets_patent_subset, aes(x = zd)) +
-  geom_bar()
+# BEA
+# https://apps.bea.gov/regional/downloadzip.cfm
+# Deleted last four rows of each of these files by hand in Excel (generally bad practice...)
+bea_ca <- read_csv(file.path(ddir, 'CAINC6N/CAINC6N_CA_2001_2019.csv')) %>%
+  mutate(State = 'California')
+bea_tx <- read_csv(file.path(ddir, 'CAINC6N/CAINC6N_TX_2001_2019.csv')) %>%
+  mutate(State = 'Texas')
+bea_il <- read_csv(file.path(ddir, 'CAINC6N/CAINC6N_IL_2001_2019.csv')) %>%
+  mutate(State = 'Illinois')
+bea_ma <- read_csv(file.path(ddir, 'CAINC6N/CAINC6N_MA_2001_2019.csv')) %>%
+  mutate(State = 'Massachusetts')
+bea_ny <- read_csv(file.path(ddir, 'CAINC6N/CAINC6N_NY_2001_2019.csv')) %>%
+  mutate(State = 'New York')
+bea_fl <- read_csv(file.path(ddir, 'CAINC6N/CAINC6N_FL_2001_2019.csv')) %>%
+  mutate(State = 'Florida')
 
-# see which ZD category has more grants
-grant_zd_sum <- df_comets_grant_subset %>%
-  group_by(zd)%>%
-  summarize(count=n())%>%
-  arrange(desc(count))
+bea_full <- rbind(bea_ca, bea_tx, bea_il, bea_ny, bea_fl) %>%
+  filter(GeoFIPS != '"36000"' & GeoFIPS != '"06000"' & GeoFIPS != '"48000"' &
+           GeoFIPS != '"17000"' & GeoFIPS != '"25000"' & GeoFIPS != '"12000"') %>%
+  mutate(GeoName = toupper(GeoName)) %>%
+  select(-c('GeoFIPS', 'Region', 'TableName', 'LineCode')) %>%
+  melt(id=c('GeoName', 'IndustryClassification', 'Description', 'Unit', 'State')) %>%
+  rename(year = variable, compensation = value) %>%
+  separate(GeoName, c('GeoName', 'state_code'), ', ') %>%
+  select(-c('state_code'))
 
-p2 <- ggplot(df_comets_grant_subset, aes(x = zd)) +
-  geom_bar()
+# Merge datasets
+univ_full <- bea_full %>%
+  inner_join(univ_uspto_patents, by = c('GeoName', 'year', 'State')) %>%
+  select(!c('State')) %>% 
+  rename(state = STATE, city = GeoName, naics = IndustryClassification, naics_description = Description,
+         compensation_unit = Unit)
 
-# compare the results
-plot_grid(p1, p2, labels = c("patents","grants"))
+univ_naics_simple <- univ_full %>%
+  filter(nchar(naics) == 3)
 
-# Capital expenditures in different industries 
+kbi_list <- c(325, 333, 334, 335, 512, 513, 211, 324, 332, 486)
+# cross check and flag with KBI list
+naics_codes_kbi <- univ_naics_simple %>%
+  filter(naics != '...') %>%
+  select(c('naics', 'naics_description')) %>%
+  distinct() %>%
+  mutate(naics = as.numeric(naics)) %>%
+  arrange(naics) %>%
+  mutate(kbi = ifelse(naics %in% kbi_list, 1, 0)) %>%
+  select(-naics_description)
 
-df_invest_by_sic <- df_nber_sic5811 %>%
-  group_by(sic) %>%
-  summarize(invest_per_equip_mean = mean(invest/equip), sic_name, year) %>%
-  arrange(desc(invest_per_equip_mean))
+`%not_in%` <- purrr::negate(`%in%`)
+univ_kbi <- univ_naics_simple %>%
+  filter(naics != '...') %>%
+  filter(compensation %not_in% c('(D)', '(NA)', '(NM)')) %>%
+  mutate(naics = as.numeric(naics), compensation = as.numeric(compensation)) %>%
+  left_join(naics_codes_kbi, by = 'naics') %>%
+  select(-c('naics_description', 'compensation_unit')) %>%
+  group_by(year, city, state) %>% 
+  mutate(total_comp = sum(compensation)) %>%
+  group_by(year, city, state, kbi) %>%
+  mutate(kbi_comp = sum(compensation)) %>%
+  filter(kbi == 1) %>%
+  ungroup() %>%
+  mutate(kbi_share = kbi_comp/total_comp) %>%
+  select(c('year', 'city', 'state', 'patent_universities_count', 'patent_count', 'kbi_comp', 'kbi_share')) %>%
+  distinct() %>%
+  filter(kbi_comp > 0) %>%
+  mutate(ln_kbi_comp = log(kbi_comp)) %>%
+  mutate(kbi_comp_mil = kbi_comp/1000) %>%
+  mutate(ln_patent_count = log(patent_count))
 
-ggplot(df_invest_by_sic, aes(x = sic, y = invest_per_equip_mean)) +
-  geom_col() +
-  theme_void()
+univ_kbi_pd <- pdata.frame(x = univ_kbi, index = c('city', 'year'))
 
-# Merge ICPSR on SIC codes (AA1A)
-df_icpsr_selected_cols <- df_icpsr_followups %>%
-  rename(naics = AA1) 
+# REGRESSIONS
 
-icpsr_nber <- merge(df_icpsr_selected_cols, df_nber_naics5811, on = 'naics')
-View(icpsr_nber)
+lm_fe_1 <- plm(ln_kbi_comp ~ patent_count,
+               data = univ_kbi_pd, model = "within", effect = "twoways")
+lm_plot_1 <- lm(ln_kbi_comp ~ patent_count + as.factor(year) + as.factor(city), data = univ_kbi)
+
+lm_fe_2 <- plm(kbi_comp_mil ~ patent_count,
+               data = univ_kbi_pd, model = "within", effect = "twoways")
+lm_plot_2 <- lm(kbi_comp_mil ~ patent_count + as.factor(year) + as.factor(city), data = univ_kbi)
+
+lm_fe_3 <- plm(kbi_comp_mil ~ ln_patent_count,
+               data = univ_kbi_pd, model = "within", effect = "twoways")
+
+reg_table <- texreg(list(lm_fe_2, lm_fe_3), include.ci = FALSE, digits = 3,
+                 custom.coef.map = list('patent_count'= "UnivPatents",
+                                        'ln_patent_count' = "ln(UnivPatents)"),
+                 custom.header = list('KBIComp' = 1:2),
+                 custom.model.names = c('(1)', '(2)'),
+                 caption = 'Regression analysis')
+write.table(reg_table, file.path(root, 'docs', 'reg_table.tex'), col.names = FALSE, row.names = FALSE, quote = FALSE)
+
+# FIGURES
+
+model_fig <- plot_model(lm_plot_2, type = "pred", terms = "patent_count", 
+                         title = 'Model Predicted Knowledge-based industry compensation vs. University patent count | Fixed effects',
+                         axis.title = c('University patent count','Knowledge-based industry compensation (millions)'))
+ggsave(file.path(root, 'docs', 'model_fig.pdf'), 
+       plot = model_fig, width = 10, height = 7)
+
+patents_fig_df <- univ_kbi %>%
+  group_by(state, year) %>%
+  summarise(patent_count)
+
+patents_fig <- ggplot(data = patents_fig_df, aes(x = year, y = patent_count, group = state, color = state)) +
+  geom_smooth(se = FALSE) + 
+  xlab('Year') +
+  ylab('University patent count') +
+  ggtitle('University patent counts in cities in sample')
+ggsave(file.path(root, 'docs', 'patents_fig.pdf'), 
+       plot = patents_fig, width = 6, height = 4)
+
+kbi_comp_df <- univ_kbi %>%
+  group_by(state, year) %>%
+  summarise(kbi_comp_mil)
+
+kbi_comp_fig <- ggplot(data = kbi_comp_df, aes(x = year, y = kbi_comp_mil, group = state, color = state)) +
+  geom_smooth(se = FALSE) + 
+  xlab('Year') +
+  ylab('Knowledge-based industry compensation (millions)') +
+  ggtitle('Knowledge-based industry compensation in cities in sample')
+ggsave(file.path(root, 'docs', 'kbi_comp_fig.pdf'), 
+       plot = kbi_comp_fig, width = 8, height = 6)
